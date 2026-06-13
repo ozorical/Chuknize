@@ -15,8 +15,13 @@ class ChunkizePlugin(Plugin):
         "chunkize": {
             "description": "Pregenerate world chunks ahead of time.",
             "usages": [
+                "/chunkize (start|pause|resume|cancel|status|config)<mode: ChunkizeControl>",
                 "/chunkize (start)<mode: ChunkizeStart> <radius: int> [dimension: string] [centerX: int] [centerZ: int] [shape: string]",
-                "/chunkize (pause|resume|cancel|status|config)<mode: ChunkizeControl>",
+                "/chunkize (pause)<mode: ChunkizePause>",
+                "/chunkize (resume)<mode: ChunkizeResume>",
+                "/chunkize (cancel)<mode: ChunkizeCancel>",
+                "/chunkize (status)<mode: ChunkizeStatus>", 
+                "/chunkize (config)<mode: ChunkizeConfig>", 
             ],
             "permissions": ["chunkize.command"],
         }

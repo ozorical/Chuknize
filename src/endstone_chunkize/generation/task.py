@@ -7,6 +7,8 @@ from endstone_chunkize.generation.progress import RateTracker
 from endstone_chunkize.util.dimensions import normalizeDimensionName
 from endstone_chunkize.util.text import PREFIX, formatDuration, formatNumber
 
+STAMP_HEIGHTS = {"overworld": 319, "nether": 127, "the_end": 255}
+
 
 class AreaSlot:
     def __init__(self, name):
@@ -15,6 +17,8 @@ class AreaSlot:
         self.cell = None
         self.pending = set()
         self.deadline = 0.0
+        self.settleUntil = 0.0
+        self.stampQueue = []
         self.active = False
         self.freedSerial = -1
 
@@ -91,6 +95,8 @@ class GenerationTask:
                 self.removeArea(slot)
             slot.active = False
             slot.pending.clear()
+            slot.stampQueue = []
+            slot.settleUntil = 0.0
         self.nextCell = self.watermark
         self.completedAhead.clear()
         self.retryQueue.clear()
@@ -117,6 +123,14 @@ class GenerationTask:
 
     def checkSlot(self, slot, now):
         if not slot.pending:
+            if slot.settleUntil == 0.0:
+                slot.settleUntil = now + self.settings.settleSeconds
+                if self.settings.stampChunks:
+                    slot.stampQueue = list(slot.cell.chunkCoords())
+                return
+            self.stampChunks(slot)
+            if now < slot.settleUntil or slot.stampQueue:
+                return
             self.releaseSlot(slot)
             self.markComplete(slot.cellIndex)
             return
@@ -137,51 +151,41 @@ class GenerationTask:
 
     def fillSlots(self, now):
         loaded = None
-        emptySkips = 0
         for slot in self.slots:
             if self.task is None:
                 return
             if slot.active or slot.freedSerial >= self.serial:
                 continue
-            while True:
-                cellIndex = self.peekNextCell()
-                if cellIndex is None:
-                    return
-                cell = self.plan.cells[cellIndex]
-                if loaded is None:
-                    loaded = self.loadedChunkSet()
-                pending = {coord for coord in cell.chunkCoords() if coord not in loaded}
-                if not pending:
-                    if emptySkips >= 25:
-                        return
-                    emptySkips += 1
-                    self.takeNextCell()
-                    self.chunksDone += cell.chunkCount
-                    self.rate.record(cell.chunkCount)
-                    self.markComplete(cellIndex)
-                    continue
-                slot.cellIndex = cellIndex
-                slot.cell = cell
-                slot.deadline = now + self.settings.cellTimeoutSeconds
-                if not self.addArea(slot):
-                    self.dispatch(f"execute in {self.dimension} run tickingarea remove {slot.name}")
-                    self.failStreak += 1
-                    if self.failStreak >= 5:
-                        self.plugin.logger.error(
-                            "Could not create a ticking area, the world may be at its limit. "
-                            "Free up ticking areas or lower maxActiveAreas, then run /chunkize resume"
-                        )
-                        self.pause(byUser=True)
-                    return
-                self.failStreak = 0
-                self.takeNextCell()
-                slot.pending = pending
-                alreadyLoaded = cell.chunkCount - len(pending)
-                if alreadyLoaded:
-                    self.chunksDone += alreadyLoaded
-                    self.rate.record(alreadyLoaded)
-                slot.active = True
-                break
+            cellIndex = self.peekNextCell()
+            if cellIndex is None:
+                return
+            cell = self.plan.cells[cellIndex]
+            if loaded is None:
+                loaded = self.loadedChunkSet()
+            pending = {coord for coord in cell.chunkCoords() if coord not in loaded}
+            slot.cellIndex = cellIndex
+            slot.cell = cell
+            slot.deadline = now + self.settings.cellTimeoutSeconds
+            slot.settleUntil = 0.0
+            slot.stampQueue = []
+            if not self.addArea(slot):
+                self.dispatch(f"execute in {self.dimension} run tickingarea remove {slot.name}")
+                self.failStreak += 1
+                if self.failStreak >= 5:
+                    self.plugin.logger.error(
+                        "Could not create a ticking area, the world may be at its limit. "
+                        "Free up ticking areas or lower maxActiveAreas, then run /chunkize resume"
+                    )
+                    self.pause(byUser=True)
+                return
+            self.failStreak = 0
+            self.takeNextCell()
+            slot.pending = pending
+            alreadyLoaded = cell.chunkCount - len(pending)
+            if alreadyLoaded:
+                self.chunksDone += alreadyLoaded
+                self.rate.record(alreadyLoaded)
+            slot.active = True
 
     def peekNextCell(self):
         if self.retryQueue:
@@ -201,6 +205,24 @@ class GenerationTask:
         self.removeArea(slot)
         slot.active = False
         slot.freedSerial = self.serial
+
+    def stampChunks(self, slot):
+        if not slot.stampQueue:
+            return
+        dimension = self.resolveDimension()
+        if dimension is None:
+            slot.stampQueue.clear()
+            return
+        stampY = STAMP_HEIGHTS.get(self.dimension, 319)
+        for _ in range(min(16, len(slot.stampQueue))):
+            chunkX, chunkZ = slot.stampQueue.pop()
+            try:
+                block = dimension.get_block_at(chunkX * 16 + 8, stampY, chunkZ * 16 + 8)
+                original = block.data
+                block.set_type("minecraft:bedrock", False)
+                block.set_data(original, False)
+            except Exception:
+                pass
 
     def markComplete(self, cellIndex):
         self.completedAhead.add(cellIndex)

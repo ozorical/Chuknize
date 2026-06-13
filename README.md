@@ -8,7 +8,7 @@ Generate your world ahead of time so players never hit chunk generation lag. Wor
 
 ## How it works
 
-Bedrock Dedicated Server has no API to load or generate chunks directly. Chunkize works around that by driving the vanilla `/tickingarea` command. The target region is split into chunk-aligned batches, and each batch gets a temporary ticking area which forces the server to generate and save those chunks. Chunkize listens for chunk load events to know exactly when a batch is done, removes the ticking area and moves on to the next one, spiraling outward from the center until the whole region is generated.
+Bedrock Dedicated Server has no API to load or generate chunks directly. Chunkize works around that by driving the vanilla `/tickingarea` command. The target region is split into chunk-aligned batches, and each batch gets a temporary ticking area which forces the server to generate those chunks. Chunkize listens for chunk load events to know when a batch has loaded, then holds the area for a settle period so generation can fully finish, and stamps every chunk with a touch-and-restore block write so the server is guaranteed to save it to disk. Only then is the ticking area removed and the next batch started, spiraling outward from the center until the whole region is generated.
 
 Progress is saved to disk, so a server restart or crash picks up right where it left off.
 
@@ -57,6 +57,8 @@ Examples:
 | `maxActiveAreas` | `4` | Ticking areas used at once. Bedrock allows 10 per world, leave headroom if your server uses its own. |
 | `checkIntervalTicks` | `10` | How often the generator checks progress and rotates batches. |
 | `cellTimeoutSeconds` | `60` | How long to wait on a batch before retrying it, then skipping it. |
+| `settleSeconds` | `20` | How long a batch keeps its ticking area after all of its chunks have loaded, so generation can finish before the area is removed. |
+| `stampChunks` | `true` | Touch one block per chunk (written and instantly restored) to mark the chunk dirty, forcing the server to persist it. |
 | `maxRadius` | `50000` | Safety cap for the radius argument. |
 | `autoResume` | `true` | Continue an interrupted task automatically after a restart. |
 | `logIntervalSeconds` | `30` | Progress log interval in the console, 0 to disable. |

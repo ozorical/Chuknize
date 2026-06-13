@@ -59,6 +59,7 @@ class ChunkizePlugin(Plugin):
     def tryAutoResume(self):
         if self.generationTask is not None:
             return
+        assert self.progressStore, "Called tryAutoResume while progressStore is None"
         state = self.progressStore.load()
         if state is None or state.get("userPaused"):
             return

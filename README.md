@@ -1,4 +1,6 @@
-# Chunkize
+<div align="center">
+  <img src="chunkize.jpg" alt="Chunkize" width="640">
+</div>
 
 Chunk pregeneration for [Endstone](https://github.com/EndstoneMC/endstone) Bedrock servers, made by **ozz**.
 

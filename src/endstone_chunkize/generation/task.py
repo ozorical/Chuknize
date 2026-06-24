@@ -7,11 +7,9 @@ from endstone_chunkize.generation.progress import RateTracker
 from endstone_chunkize.util.dimensions import normalizeDimensionName
 from endstone_chunkize.util.text import PREFIX, describeMessage, formatDuration, formatNumber
 
-STAMP_HEIGHTS = {"overworld": 319, "nether": 127, "the_end": 255}
 FLUSH_TIMEOUT_SECONDS = 60
 FLUSH_READY_MARKERS = ("commands.save-all.success", "ready to be copied")
 LOAD_CHECK_SECONDS = 5.0
-VERIFY_FLOOR = {"overworld": -40, "nether": 0}
 
 
 class AreaSlot:
@@ -22,8 +20,6 @@ class AreaSlot:
         self.pending = set()
         self.deadline = 0.0
         self.settleStart = 0.0
-        self.verifyPending = set()
-        self.stampQueue = []
         self.active = False
         self.freedSerial = -1
 
@@ -111,8 +107,6 @@ class GenerationTask:
                 self.removeArea(slot)
             slot.active = False
             slot.pending.clear()
-            slot.stampQueue = []
-            slot.verifyPending = set()
             slot.settleStart = 0.0
         self.nextCell = self.watermark
         self.completedAhead.clear()
@@ -148,20 +142,9 @@ class GenerationTask:
         if not slot.pending:
             if slot.settleStart == 0.0:
                 slot.settleStart = now
-                if self.settings.stampChunks:
-                    slot.stampQueue = list(slot.cell.chunkCoords())
-                if self.settings.verifyGeneration:
-                    slot.verifyPending = set(slot.cell.chunkCoords())
                 return
-            self.stampChunks(slot)
-            self.verifyChunks(slot)
             elapsed = now - slot.settleStart
-            verifiedDone = (
-                elapsed >= self.settings.settleMinSeconds
-                and not slot.verifyPending
-                and not slot.stampQueue
-            )
-            if not (verifiedDone or elapsed >= self.settings.settleSeconds):
+            if elapsed < self.settings.settleMinSeconds:
                 return
             self.releaseSlot(slot)
             self.markComplete(slot.cellIndex)
@@ -203,8 +186,6 @@ class GenerationTask:
             slot.cell = cell
             slot.deadline = now + self.settings.cellTimeoutSeconds
             slot.settleStart = 0.0
-            slot.verifyPending = set()
-            slot.stampQueue = []
             if not self.addArea(slot):
                 self.dispatch(f"execute in {self.dimension} run tickingarea remove {slot.name}")
                 self.handleAreaFailure(activeCount)
@@ -254,12 +235,8 @@ class GenerationTask:
 
     def serverMspt(self):
         try:
-            value = self.plugin.server.average_mspt
-        except Exception:
-            return None
-        try:
-            return float(value)
-        except (TypeError, ValueError):
+            return float(self.plugin.server.average_mspt)
+        except (AttributeError, TypeError, ValueError):
             return None
 
     def peekNextCell(self):
@@ -280,43 +257,6 @@ class GenerationTask:
         self.removeArea(slot)
         slot.active = False
         slot.freedSerial = self.serial
-
-    def stampChunks(self, slot):
-        if not slot.stampQueue:
-            return
-        dimension = self.resolveDimension()
-        if dimension is None:
-            slot.stampQueue.clear()
-            return
-        stampY = STAMP_HEIGHTS.get(self.dimension, 319)
-        for _ in range(min(32, len(slot.stampQueue))):
-            chunkX, chunkZ = slot.stampQueue.pop()
-            try:
-                block = dimension.get_block_at(chunkX * 16 + 8, stampY, chunkZ * 16 + 8)
-                original = block.data
-                block.set_type("minecraft:bedrock", False)
-                block.set_data(original, False)
-            except Exception:
-                pass
-
-    def verifyChunks(self, slot):
-        if not slot.verifyPending:
-            return
-        floor = VERIFY_FLOOR.get(self.dimension)
-        if floor is None:
-            return
-        dimension = self.resolveDimension()
-        if dimension is None:
-            return
-        verified = []
-        for chunkX, chunkZ in slot.verifyPending:
-            try:
-                height = dimension.get_highest_block_y_at(chunkX * 16 + 8, chunkZ * 16 + 8)
-            except Exception:
-                height = None
-            if height is not None and height > floor:
-                verified.append((chunkX, chunkZ))
-        slot.verifyPending.difference_update(verified)
 
     def markComplete(self, cellIndex):
         self.chunksSinceFlush += self.plan.cells[cellIndex].chunkCount
@@ -399,7 +339,7 @@ class GenerationTask:
         maxX = cell.maxChunkX * 16 + 15
         maxZ = cell.maxChunkZ * 16 + 15
         return self.dispatch(
-            f"execute in {self.dimension} run tickingarea add {minX} 0 {minZ} {maxX} 0 {maxZ} {slot.name}"
+            f"execute in {self.dimension} run tickingarea add {minX} 0 {minZ} {maxX} 0 {maxZ} {slot.name} true"
         )
 
     def removeArea(self, slot):

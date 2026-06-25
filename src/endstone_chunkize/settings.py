@@ -10,7 +10,6 @@ MODE_PRESETS = {
         "maxActiveAreas": 1,
         "settleSeconds": 8,
         "settleMinSeconds": 2,
-        "verifyGeneration": True,
         "checkIntervalTicks": 10,
         "targetMspt": 40.0,
         "flushIntervalChunks": 512,
@@ -20,7 +19,6 @@ MODE_PRESETS = {
         "maxActiveAreas": 6,
         "settleSeconds": 8,
         "settleMinSeconds": 1,
-        "verifyGeneration": True,
         "checkIntervalTicks": 5,
         "targetMspt": 45.0,
         "flushIntervalChunks": 512,
@@ -30,7 +28,6 @@ MODE_PRESETS = {
         "maxActiveAreas": 10,
         "settleSeconds": 8,
         "settleMinSeconds": 0,
-        "verifyGeneration": True,
         "checkIntervalTicks": 5,
         "targetMspt": 48.0,
         "flushIntervalChunks": 1024,
@@ -43,12 +40,12 @@ MODE_RATES = {
     "intense": "~150 chunks/s",
 }
 
-DEFAULT_CONFIG = """[generation]
+DEFAULT_CONFIG = """
+[generation]
 # Speed mode: light, medium or intense. Easiest to change in game with /chunkize config.
 mode = "medium"
 minActiveAreas = 1
 cellTimeoutSeconds = 60
-stampChunks = true
 maxRadius = 50000
 
 [progress]
@@ -121,10 +118,8 @@ class Settings:
         self.targetMspt = clamp(float(generation.get("targetMspt", preset["targetMspt"])), 10.0, 50.0)
         self.checkIntervalTicks = clamp(int(generation.get("checkIntervalTicks", preset["checkIntervalTicks"])), 1, 200)
         self.cellTimeoutSeconds = clamp(int(generation.get("cellTimeoutSeconds", 60)), 5, 3600)
-        self.verifyGeneration = bool(generation.get("verifyGeneration", preset["verifyGeneration"]))
         self.settleSeconds = clamp(int(generation.get("settleSeconds", preset["settleSeconds"])), 0, 600)
         self.settleMinSeconds = clamp(int(generation.get("settleMinSeconds", preset["settleMinSeconds"])), 0, self.settleSeconds)
-        self.stampChunks = bool(generation.get("stampChunks", True))
         self.maxRadius = clamp(int(generation.get("maxRadius", 50000)), 16, 1000000)
         self.flushIntervalChunks = clamp(int(generation.get("flushIntervalChunks", preset["flushIntervalChunks"])), 0, 1000000)
         self.autoResume = bool(progress.get("autoResume", True))
